@@ -9,4 +9,7 @@ Ok fine, not LITERALLY anything (I don't wanna get banned), so:
 - No Viruses
 - No Illegal Content
 - No Pirated Stuff
+- No Deleting the Guestbook or other's guestbook entries
+- No deleting other people's code
+- No Insults
 But everything else is allowed.
