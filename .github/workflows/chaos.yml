@@ -1,17 +1,56 @@
-name: Auto-Merge Everything
+name: Validate and Auto-Merge Contributions
+
 on:
-  pull_request:
-    types: [opened, synchronize]
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
-  merge:
+  validate:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
-      - name: Auto-merge PR
-        run: |
-          gh pr merge ${{ github.event.pull_request.number }} --squash --auto
+      - name: Validate contribution files
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_BASE_REPO: ${{ github.event.pull_request.base.repo.full_name }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${PR_HEAD_REPO}" == "${PR_BASE_REPO}" ]]; then
+            echo "Contributions must be submitted from a fork of the repository."
+            exit 1
+          fi
+
+          mapfile -t changed_files < <(
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+              --jq '.[] | [.status, .filename] | @tsv'
+          )
+
+          if [[ "${#changed_files[@]}" -ne 1 ]]; then
+            echo "A contribution must add exactly one file."
+            printf 'Changed files:\n%s\n' "${changed_files[@]}"
+            exit 1
+          fi
+
+          expected_file="guestbook/entries/${PR_AUTHOR}.md"
+          if [[ "${changed_files[0]}" != $'added\t'"${expected_file}" ]]; then
+            echo "The PR must add ${expected_file} and must not edit or delete other files."
+            printf 'Changed files:\n%s\n' "${changed_files[@]}"
+            exit 1
+          fi
+
+  merge:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable squash auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge "${{ github.event.pull_request.number }}" --squash --auto
